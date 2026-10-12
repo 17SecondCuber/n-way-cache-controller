@@ -1,0 +1,9 @@
+# Private project documents
+Cache_Controller_Scope.docx
+
+# ModelSim generated files
+work/
+*.wlf
+transcript
+modelsim.ini
+*.vcd
