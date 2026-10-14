@@ -1,19 +1,20 @@
-module mem_model #(
-    parameter ADDR_W     = 16,
+module mem_model 
+#(
+    parameter ADDR_W = 16,
     parameter LINE_WORDS = 4,
-    parameter LATENCY    = 3,
-    parameter OFFSET_W   = $clog2(LINE_WORDS),
-    parameter LINEA_W    = ADDR_W - OFFSET_W 
+    parameter LATENCY = 3,
+    parameter OFFSET_W = $clog2(LINE_WORDS),
+    parameter LINEA_W = ADDR_W - OFFSET_W 
 ) 
 (
-    input  wire                     clk,
-    input  wire                     rst,
-    input  wire                     mem_req,
-    input  wire                     mem_we,
-    input  wire [LINEA_W-1:0]       mem_addr,
-    input  wire [LINE_WORDS*32-1:0] mem_wdata,
-    output reg  [LINE_WORDS*32-1:0] mem_rdata,
-    output reg                      mem_resp
+    input wire clk,
+    input wire rst,
+    input wire mem_req,
+    input wire mem_we,
+    input wire [LINEA_W-1:0] mem_addr,
+    input wire [LINE_WORDS*32-1:0] mem_wdata,
+    output reg [LINE_WORDS*32-1:0] mem_rdata,
+    output reg mem_resp
 );
     //make the memory - number of bits per line by number of lines
     reg [LINE_WORDS*32-1:0] mem [0:(1<<LINEA_W)-1];

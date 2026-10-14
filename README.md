@@ -2,7 +2,7 @@
 
 This is my first Verilog project. It is an N-way set-associative write-back cache. You can pick between true LRU and tree pseudo-LRU for replacement.
 
-Status: still working on it. Right now I only have a small counter test to  make sure ModelSim works. The cache itself is not done yet. This file is what I am planning the interface to look like.
+Status: still working on it. The cache (rtl/cache.v) and the memory model (tb/mem_model.v) are written. The LRU and PLRU modules and the testbench are not done yet, so right now it only works with WAYS = 1.
 
 ## Parameters
 
@@ -41,6 +41,14 @@ Both sides use the same rule. The one asking raises req and keeps it high (and k
 
 The directions are from the cache's point of view.
 
+## Counter signals
+
+- hit_count (output, 32 bits): number of accesses where the line was already in the cache
+- miss_count (output, 32 bits): number of accesses where the line had to be fetched from memory
+- evict_count (output, 32 bits): number of misses that replaced a valid line. It counts clean lines and dirty lines, not just the ones that get written back
+
+All three go to zero on reset. Every access counts as either one hit or one miss. 
+
 ## Address layout
 
 A word address gets split into three parts, starting from the top bit:
@@ -50,3 +58,19 @@ A word address gets split into three parts, starting from the top bit:
 - Offset: OFFSET_W = log2(LINE_WORDS) bits, picks the word inside the line
 
 With the default values that works out to a 10-bit tag, 4-bit index, and 2-bit offset.
+
+A line is stored as one long row of bits. Word 0 is the lowest 32 bits, word 1 is the next 32 bits, and so on.
+
+## State machine
+
+The controller has five states. It sits in IDLE until the CPU raises cpu_req, then goes to LOOKUP. From LOOKUP it goes straight to RESPOND on a hit. On a miss it goes to REFILL, but if the line being replaced is dirty it goes to WRITEBACK first and then to REFILL. After REFILL it goes to RESPOND, and RESPOND always goes back to IDLE.
+
+- IDLE: waits for cpu_req.
+- LOOKUP: checks every way of the set for a matching tag. On a miss it also picks which way to replace (an empty way if there is one, otherwise the one the replacement policy picks). Takes one cycle.
+- WRITEBACK: sends the old line to memory and waits for mem_resp. Only happens if the line being replaced is valid and dirty. Takes however many cycles memory takes (mem latency).
+- REFILL: fetches the line the CPU wants and waits for mem_resp. Then it stores the line and its tag, sets valid, and clears dirty. Takes however many cycles memory takes (mem latency).
+- RESPOND: does the actual read or write and pulses cpu_resp. On a write it stores the word and sets dirty. Takes one cycle.
+
+So a hit never talks to memory, a miss with a clean or empty line talks to it once, and a miss with a dirty line talks to it twice.
+
+A write miss does not need anything special. REFILL brings the whole line in first, and then RESPOND writes the one word into it.
