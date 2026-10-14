@@ -93,11 +93,13 @@ module cache
         end
     end
 
-    //way_sel holds the way that was just used so that the lru and prlu can update that way to zero
+    //way_sel holds the way that was just used so that the lru and prlu can update values
     reg [WAY_W-1:0] way_sel;
 
-    //replacement policy - told about every access, suggests a way to evict
+    //the victim determined by the lru/prlu
     wire [WAY_W-1:0] policy_victim;
+
+    //bit to tell lru/prlu that a way was used so it updates values
     wire way_was_used = (state == RESPOND);
 
     generate

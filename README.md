@@ -2,7 +2,7 @@
 
 This is my first Verilog project. It is an N-way set-associative write-back cache. You can pick between true LRU and tree pseudo-LRU for replacement.
 
-Status: still working on it. The cache (rtl/cache.v) and the memory model (tb/mem_model.v) are written. The LRU and PLRU modules and the testbench are not done yet, so right now it only works with WAYS = 1.
+Status: still working on it. The cache (rtl/cache.v), both replacement policies (rtl/lru.v and rtl/plru.v), and the memory model (tb/mem_model.v) are written. The testbench (tb/tb_cache.v) is not done yet, so there are no results here yet.
 
 ## Parameters
 
@@ -74,3 +74,15 @@ The controller has five states. It sits in IDLE until the CPU raises cpu_req, th
 So a hit never talks to memory, a miss with a clean or empty line talks to it once, and a miss with a dirty line talks to it twice.
 
 A write miss does not need anything special. REFILL brings the whole line in first, and then RESPOND writes the one word into it.
+
+## Replacement policies
+
+When a miss happens and every way in the set is full, the cache has to pick a way to throw out. If the set still has an empty way it always uses that one, and only asks the replacement policy when the set is full. POLICY picks which policy gets built. With WAYS = 1 there is nothing to choose, so neither module is built.
+
+Both policies are separate modules with the same ports, so the cache does not know which one it has. The cache tells the policy every time a way is used (once per access, in RESPOND, whether it was a hit or a fresh fill), and the policy always shows which way it would evict from the current set.
+
+True LRU (rtl/lru.v) gives every way in a set an age from 0 to WAYS-1, where 0 is the most recently used. The ages in a set are always all different. When a way is used it becomes 0, and every way that was younger than it gets one older. The victim is the way with age WAYS-1. This takes WAYS * log2(WAYS) bits per set.
+
+Tree pseudo-LRU (rtl/plru.v) puts the ways at the bottom of a binary tree and keeps one bit at each node above them, which works like an arrow pointing left or right. To find the victim it starts at the top and follows the arrows down to a way. When a way is used, every arrow on the path from that way up to the top is set to point away from it. This takes WAYS - 1 bits per set. It does not always pick the oldest way, but it never picks the one that was just used. With 2 ways the two policies behave exactly the same.
+
+The bits each policy needs to store per set for LRU vs PRLU is 2 bits vs 1 bit at 2 ways, 8 vs 3 at 4 ways, and 24 vs 7 at 8 ways. The formula to calculate the bits per set needed for LRU is WAYS*log2(WAYS), and for PRLU is (WAYS-1).
