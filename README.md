@@ -78,6 +78,8 @@ A line is stored as one long row of bits. Word 0 is the lowest 32 bits, word 1 i
 
 The controller has five states. It sits in IDLE until the CPU raises cpu_req, then goes to LOOKUP. From LOOKUP it goes straight to RESPOND on a hit. On a miss it goes to REFILL, but if the line being replaced is dirty it goes to WRITEBACK first and then to REFILL. After REFILL it goes to RESPOND, and RESPOND always goes back to IDLE.
 
+![FSM diagram](docs/fsm.png)
+
 - IDLE: waits for cpu_req.
 - LOOKUP: checks every way of the set for a matching tag. On a miss it also picks which way to replace (an empty way if there is one, otherwise the one the replacement policy picks). Takes one cycle.
 - WRITEBACK: sends the old line to memory and waits for mem_resp. Only happens if the line being replaced is valid and dirty. Takes however many cycles memory takes (mem latency).
@@ -87,6 +89,10 @@ The controller has five states. It sits in IDLE until the CPU raises cpu_req, th
 So a hit never talks to memory, a miss with a clean or empty line talks to it once, and a miss with a dirty line talks to it twice.
 
 A write miss does not need anything special. REFILL brings the whole line in first, and then RESPOND writes the one word into it.
+
+![Waveform of a dirty-eviction miss](docs/waveform.png)
+
+This waveform shows a miss that needs a writeback. The state goes LOOKUP, WRITEBACK, REFILL, RESPOND.
 
 ## Replacement policies
 
