@@ -2,7 +2,19 @@
 
 This is my first Verilog project. It is an N-way set-associative write-back cache. You can pick between true LRU and tree pseudo-LRU for replacement.
 
-Status: still working on it. The cache (rtl/cache.v), both replacement policies (rtl/lru.v and rtl/plru.v), and the memory model (tb/mem_model.v) are written. The testbench (tb/tb_cache.v) is not done yet, so there are no results here yet.
+Status: Done. The cache (rtl/cache.v), both replacement policies (rtl/lru.v and rtl/plru.v), the memory model (tb/mem_model.v) and the testbench (tb/tb_cache.v) are all written, and every config I ran passes. The results are in the Results section at the bottom.
+
+## How to run it
+
+You need ModelSim (I used the Intel FPGA Starter Edition). Run everything from the project folder.
+
+To run the testbench with its default config (1 way, 16 sets, LRU) and open the waveforms:
+
+do run.do
+
+To run a different config, change the parameters in your code, then run the run.do command again, pressing "Reload" when you are prompted.
+
+Each run prints a PASSED or ERROR line for every test, the hit rates for the random and hot/cold tests, and OVERALL PASS at the end if nothing failed.
 
 ## Parameters
 
@@ -11,6 +23,7 @@ Status: still working on it. The cache (rtl/cache.v), both replacement policies 
 - LINE_WORDS (default 4): number of 32-bit words in a line, power of two
 - POLICY (default 0): 0 = LRU, 1 = tree PLRU
 - ADDR_W (default 16): width of a word address
+- LATENCY (default 3): clock cycles it takes memory to respond
 
 ## Clock and reset
 
@@ -81,8 +94,95 @@ When a miss happens and every way in the set is full, the cache has to pick a wa
 
 Both policies are separate modules with the same ports, so the cache does not know which one it has. The cache tells the policy every time a way is used (once per access, in RESPOND, whether it was a hit or a fresh fill), and the policy always shows which way it would evict from the current set.
 
-True LRU (rtl/lru.v) gives every way in a set an age from 0 to WAYS-1, where 0 is the most recently used. The ages in a set are always all different. When a way is used it becomes 0, and every way that was younger than it gets one older. The victim is the way with age WAYS-1. This takes WAYS * log2(WAYS) bits per set.
+LRU (rtl/lru.v) gives every way in a set an age from 0 to WAYS-1, where 0 is the most recently used. The ages in a set are always all different. When a way is used it becomes 0, and every way that was younger than it gets one older. The victim is the way with age WAYS-1. This takes WAYS * log2(WAYS) bits per set.
 
 Tree pseudo-LRU (rtl/plru.v) puts the ways at the bottom of a binary tree and keeps one bit at each node above them, which works like an arrow pointing left or right. To find the victim it starts at the top and follows the arrows down to a way. When a way is used, every arrow on the path from that way up to the top is set to point away from it. This takes WAYS - 1 bits per set. It does not always pick the oldest way, but it never picks the one that was just used. With 2 ways the two policies behave exactly the same.
 
-The bits each policy needs to store per set for LRU vs PRLU is 2 bits vs 1 bit at 2 ways, 8 vs 3 at 4 ways, and 24 vs 7 at 8 ways. The formula to calculate the bits per set needed for LRU is WAYS*log2(WAYS), and for PRLU is (WAYS-1).
+The bits each policy needs to store per set for LRU vs PLRU is 2 bits vs 1 bit at 2 ways, 8 vs 3 at 4 ways, and 24 vs 7 at 8 ways. The formula to calculate the bits per set needed for LRU is WAYS*log2(WAYS), and for PLRU is (WAYS-1).
+
+## Design simplifications
+
+These are choices I made to keep the project small enough to finish, not things I forgot:
+
+- Word addressing: every address is one 32-bit word, and there are no byte enables, so the CPU can only read or write whole words.
+- One request at a time: the CPU holds its request until the cache responds, so the cache never has to juggle more than one access.
+- Wide memory port: a whole line moves between the cache and memory in one transfer, so there are no counters for sending a line in pieces.
+- Plain register arrays: the tags and data are stored in ordinary Verilog arrays that are read in the same cycle. This is simple to simulate, but a real FPGA design would put the data in block RAM.
+- Fixed-latency memory: the memory model always takes LATENCY cycles to respond, instead of acting like real memory with varying delays.
+
+## Testbench
+
+tb/tb_cache.v runs the cache against a simple memory model (tb/mem_model.v) and a reference array in the testbench that holds what every address should contain. Every read is checked against that array. The tests run in this order:
+
+- read miss then hit
+- write then read back
+- same set conflicts
+- dirty eviction then re-read
+- replacement policy (only when WAYS is more than 1)
+- random test
+- final read-back of every address the random test used
+- hot/cold test
+- counter check (hit_count + miss_count has to equal the number of accesses)
+
+At the end it prints OVERALL PASS or the number of errors.
+
+## Hit and miss rates
+
+I only measure the hit and miss rates in two tests, the random test and the hot/cold test. The other tests are only there to check that the cache is correct, so their rates do not mean anything.
+
+The rate is worked out from the counters: hit rate = hits / (hits + misses), and the miss rate is whatever is left over.
+
+Random test: random reads and writes over an address range that is twice the size of the cache, so lines keep getting evicted and brought back. The addresses are uniformly random, so there is nothing for a replacement policy to take advantage of. I expect about a 50% hit rate for any policy, since the cache can hold about half of the addresses.
+
+Hot/cold test: this one has a pattern a replacement policy can use. 90% of the reads go to a group of "hot" lines, and the other 10% go to a "cold" region that is 16 times bigger than the cache. The hot lines add up to 90% of the cache, so they nearly fill it. The cold reads keep forcing evictions, so a good policy should throw out cold lines and keep the hot ones. The first pass warms up the cache and only the second pass is counted. The best possible hit rate here is about 90%, since the cold reads almost always miss.
+
+With 2 ways, LRU and PLRU should give exactly the same results.
+
+## Results
+
+Every number is a hit rate in percent. PLRU is n/a at 1 way because with only one way there is nothing to choose, so no policy is built. The tables use SEED = 1. I also tried other seeds and they gave approximately the same results, so the numbers do not depend on one lucky seed.
+
+The best possible hot/cold hit rate is about 90%, because 10% of the reads go to the cold region and almost all of those miss. So none of the hot/cold numbers can go above 90%, and the ones here (about 77% to 86%) are the part of that ceiling the cache actually reached.
+
+### 16 sets
+
+```
+Ways   Random LRU   Random PLRU   Hot/cold LRU   Hot/cold PLRU
+1        49.92%        n/a           86.09%         n/a
+2        49.85%       49.85%         82.11%        82.11%
+4        50.31%       50.22%         76.80%        76.52%
+8        49.44%       49.62%         81.09%        79.00%
+```
+
+### 64 sets
+
+```
+Ways   Random LRU   Random PLRU   Hot/cold LRU   Hot/cold PLRU
+1        50.05%        n/a           79.69%         n/a
+2        49.49%       49.49%         80.88%        80.88%
+4        49.83%       49.77%         79.25%        78.13%
+8        49.99%       50.04%         79.29%        77.68%
+```
+
+### LRU minus PLRU
+
+All values are percentage points. Positive means LRU was ahead.
+
+```
+Ways   Random 16 sets   Random 64 sets   Hot/cold 16 sets   Hot/cold 64 sets
+2          0.00             0.00              0.00               0.00
+4         +0.09            +0.06             +0.28              +1.12
+8         -0.18            -0.05             +2.09              +1.61
+```
+
+What I take from this:
+
+- Random test: LRU and PLRU are the same within about 0.2 points, and the sign flips, so that is just noise. This is what I expected, because random addresses have no pattern to exploit.
+- Hot/cold test: LRU is ahead at 4 and 8 ways by 0.3 to 2.1 points. PLRU only approximates LRU, so sometimes it throws out a hot line that LRU would have kept.
+- 2 ways: identical, as expected, since a single bit is enough to track which of two ways is older.
+- The trade-off: at 8 ways PLRU needs 7 bits per set instead of 24, and it cost about 1.6 to 2.1 points of hit rate on the hot/cold test.
+
+## Future work
+
+- Synthesis: run both policies through Quartus to measure how much logic each one uses and how fast it can be clocked, since this project only compares them in simulation.
+- Victim cache: add a small fully associative cache (2 to 4 lines) that catches lines as they are evicted. On a miss the cache would check it first, which should cut down the misses caused by lines fighting over the same set.

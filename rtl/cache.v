@@ -1,4 +1,4 @@
-module cache 
+module cache
 #(
     parameter WAYS = 1,
     parameter SETS = 16,
@@ -66,10 +66,10 @@ module cache
     genvar g;
     generate
         for (g=0; g<WAYS; g=g+1) begin : way_cmp
-            //hit if addr_index is valid and its tag equals addr_tag
+            //hit if way g is valid and its tag equals addr_tag
             assign way_hit[g] = valid[addr_index][g] && (tags[addr_index][g] == addr_tag);
 
-            //invalid if addr_index is not valid
+            //invalid if way g is empty
             assign way_invalid[g] = !valid[addr_index][g];
         end
     endgenerate
@@ -82,7 +82,7 @@ module cache
     reg [WAY_W-1:0] hit_way;
     reg [WAY_W-1:0] invalid_way;
 
-    //
+    //turn the way_hit/way_invalid bit vectors into a way number
     integer w;
     always @(*) begin
         hit_way = 0;
@@ -93,13 +93,13 @@ module cache
         end
     end
 
-    //way_sel holds the way that was just used so that the lru and prlu can update values
+    //the way this access uses
     reg [WAY_W-1:0] way_sel;
 
-    //the victim determined by the lru/prlu
+    //the victim determined by the lru/plru
     wire [WAY_W-1:0] policy_victim;
 
-    //bit to tell lru/prlu that a way was used so it updates values
+    //bit to tell lru/plru that a way was used so it updates values
     wire way_was_used = (state == RESPOND);
 
     generate
@@ -107,7 +107,7 @@ module cache
         if (WAYS == 1) begin : no_policy
             assign policy_victim = 0;
         end
-        //use lru or prlu depending on policy bit
+        //use lru or plru depending on policy bit
         else if (POLICY == 0) begin : use_lru
             lru #(.WAYS(WAYS), .SETS(SETS)) policy (
                 .clk(clk),
@@ -130,12 +130,12 @@ module cache
         end
     endgenerate
 
-    //on a miss, fill an empty way if there is one, otherwise use the lru/prlu
+    //on a miss, fill an empty way if there is one, otherwise use the lru/plru
     wire [WAY_W-1:0] victim_way = has_invalid ? invalid_way : policy_victim;
 
     assign cpu_resp = (state == RESPOND);
 
-    //the data we are reading is from the cache at picked by the set, way, then word respectively
+    //the data we are reading is from the cache picked by the set, way, then word respectively
     assign cpu_rdata = data[addr_index][way_sel][addr_offset*32 +: 32];
 
     //the data we are writing is the entire line picked by the set and way
@@ -213,7 +213,7 @@ module cache
                 end
 
                 RESPOND: begin
-                    //if read, store data and set dirty bit
+                    //if write, store data and set dirty bit
                     if (cpu_we) begin
                         data[addr_index][way_sel][32*addr_offset +: 32] <= cpu_wdata;
                         dirty[addr_index][way_sel] <= 1;
